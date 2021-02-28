@@ -1,20 +1,18 @@
 import nibabel as nib  # for CT files reading
 import numpy as np  # astandard numeric calculation library
 import matplotlib.pyplot as plt  # for plotting
-from skimage import measure, morphology, segmentation, feature, color  # morphological operations
+from skimage import measure, morphology  # morphological operations
 import scipy.ndimage as ndimage
 from scipy.ndimage.filters import convolve
 
 
 class Processor(object):
 
-
     def SkeletonTHFinder(self, img):
         """
         same from last HW to use the skeleton in the ROI finding
-        :param nifty_file: ct scanning
-        :param plot: boolean if true, it plotss the number of connected components as a function of min threshold
-        :return: Tuple(segmentation, minimum threshold, original segmentation, plot x axis, plot y axis)
+        :param img: ct scanning
+        :return: segmentation
         """
 
         max_th = 1300
@@ -310,6 +308,7 @@ class Processor(object):
         z = np.concatenate((z[right_lobe_indices], left_lobe_z))
         return x, y, z
 
+
     def bfs(self, img_3d, seeds, roi):
         """
         The main algo for SRG, I depend mainly on morphological operations:
@@ -341,7 +340,7 @@ class Processor(object):
         kernel = np.array([[[1, 2, 1], [2, 4, 2], [1, 2, 1]]]) / 14
         while none_zero_counter < none_zero:
             none_zero_counter = np.count_nonzero(dilated)
-            print(f'------{c}-----------')
+            print(f'------{c}------')
             c += 1
             means_ = []
             stds_ = []
@@ -368,13 +367,13 @@ class Processor(object):
             dilated, labels_num_d = morphology.label(np.bool_(dilated), return_num=True)
             dilated = dilated.astype(np.int16)
         # post-process
-        labeled = morphology.binary_dilation(labeled, selem=np.ones((10,10,10)))
+        labeled = morphology.binary_dilation(labeled, selem=np.ones((10, 10, 10)))
         morphology.remove_small_holes(labeled, connectivity=labeled.ndim, area_threshold=128, in_place=True)
-        labeled = morphology.binary_closing(labeled, selem=np.ones((3,3,3)))
+        labeled = morphology.binary_closing(labeled, selem=np.ones((3, 3, 3)))
         morphology.remove_small_objects(labeled, connectivity=labeled.ndim, min_size=10, in_place=True)
         return np.bool_(labeled).astype(np.int16)
 
-    def multipleSeedsRG(self, ct, roi):
+    def multipleSeedsRG(self, ct, roi, seeds=None):
         """
         multiple seeds sampled then passed to a bfs based algorithm to region grow
         :param ct: ct np array
@@ -382,7 +381,7 @@ class Processor(object):
         :return: liver segmentation
         """
         ct_roi = ct * roi
-        seeds = self.findSeeds(roi)
+        seeds = seeds or self.findSeeds(roi)
         liver_seg = self.bfs(ct_roi, seeds, roi)
         self.sample_stack(liver_seg, axis=2, start_with=160, show_every=5, title='liver_seg')
         self.sample_stack(ct * roi, axis=2, start_with=160, show_every=5, title='ct * roi')
@@ -403,16 +402,12 @@ class Processor(object):
         :param ct_name:
         :param aorta_name:
         :param output_name:
-        :return: open the files, rotate if hard ct. find liver roi. sample seeds. then segemtn liver and return.
+        :return: open the files. find liver roi. sample seeds. then segment liver and return.
         """
-        is_hard = 'hard' in ct_name.lower()
         nifti_file_1 = nib.load(ct_name)
         ct = nifti_file_1.get_fdata()
         nifti_file_2 = nib.load(aorta_name)
         aorta = nifti_file_2.get_fdata()
-        if is_hard:
-            aorta = np.rot90(np.rot90(aorta))
-            ct = np.rot90(np.rot90(ct))
         roi = self.liverROI(ct, aorta)
         liver_seg = self.multipleSeedsRG(ct, roi)
         liver_seg_n = nib.Nifti1Image(liver_seg, nifti_file_1.affine)
